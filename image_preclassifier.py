@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from PIL import Image, ImageFilter, ImageOps, ImageTk
+from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageTk
 
 
 APP_TITLE = "Labelyou"
@@ -224,8 +224,10 @@ class ImageClassifierApp:
         self.pan_x = 0.0
         self.pan_y = 0.0
         self.drag_anchor: tuple[int, int] | None = None
+        self.icons: dict[str, ImageTk.PhotoImage] = {}
 
         self._build_style()
+        self._build_icons()
         self._build_menu()
         self._build_ui()
         self._bind_keys()
@@ -260,6 +262,92 @@ class ImageClassifierApp:
                     break
         except (AttributeError, OSError):
             pass
+
+    def _draw_icon(self, kind: str, color: str = "#B8B8B8", size: int = 19) -> ImageTk.PhotoImage:
+        """以高分辨率绘制简洁线性图标，再缩小以获得清晰的抗锯齿边缘。"""
+        scale = 4
+        canvas_size = size * scale
+        image = Image.new("RGBA", (canvas_size, canvas_size), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(image)
+
+        def points(values: tuple[tuple[float, float], ...]) -> list[tuple[int, int]]:
+            return [(round(x * scale), round(y * scale)) for x, y in values]
+
+        def line(values: tuple[tuple[float, float], ...], width: float = 1.8, fill: str = color) -> None:
+            draw.line(points(values), fill=fill, width=max(1, round(width * scale)), joint="curve")
+
+        def rectangle(box: tuple[float, float, float, float], width: float = 1.7, fill: str = color) -> None:
+            draw.rounded_rectangle(
+                tuple(round(value * scale) for value in box),
+                radius=round(1.4 * scale),
+                outline=fill,
+                width=max(1, round(width * scale)),
+            )
+
+        if kind in {"folder", "target"}:
+            line(((2.0, 6.0), (7.0, 6.0), (8.6, 8.0), (17.0, 8.0), (15.5, 16.0), (2.0, 16.0), (2.0, 6.0)))
+            if kind == "target":
+                draw.ellipse((11 * scale, 2 * scale, 17 * scale, 8 * scale), outline=color, width=round(1.5 * scale))
+                line(((14.0, 3.5), (14.0, 6.5)), 1.4)
+                line(((12.5, 5.0), (15.5, 5.0)), 1.4)
+        elif kind == "refresh":
+            draw.arc((3 * scale, 3 * scale, 16 * scale, 16 * scale), 35, 315, fill=color, width=round(1.8 * scale))
+            draw.polygon(points(((14.0, 2.7), (17.2, 4.2), (14.8, 6.2))), fill=color)
+        elif kind == "undo":
+            draw.arc((4 * scale, 5 * scale, 17 * scale, 16 * scale), 205, 515, fill=color, width=round(1.8 * scale))
+            draw.polygon(points(((2.0, 8.0), (7.0, 4.5), (7.0, 11.0))), fill=color)
+        elif kind == "settings":
+            center = 9.5 * scale
+            draw.ellipse((5.0 * scale, 5.0 * scale, 14.0 * scale, 14.0 * scale), outline=color, width=round(1.7 * scale))
+            draw.ellipse((8.0 * scale, 8.0 * scale, 11.0 * scale, 11.0 * scale), outline=color, width=round(1.5 * scale))
+            for x1, y1, x2, y2 in ((9.5, 1.5, 9.5, 4.1), (9.5, 14.9, 9.5, 17.5), (1.5, 9.5, 4.1, 9.5), (14.9, 9.5, 17.5, 9.5), (3.8, 3.8, 5.5, 5.5), (13.5, 13.5, 15.2, 15.2), (15.2, 3.8, 13.5, 5.5), (5.5, 13.5, 3.8, 15.2)):
+                line(((x1, y1), (x2, y2)), 1.7)
+        elif kind in {"previous", "next"}:
+            if kind == "previous":
+                line(((13.5, 3.5), (7.0, 9.5), (13.5, 15.5)), 2.2)
+            else:
+                line(((5.5, 3.5), (12.0, 9.5), (5.5, 15.5)), 2.2)
+        elif kind == "skip":
+            line(((4.0, 3.8), (11.0, 9.5), (4.0, 15.2), (4.0, 3.8)), 1.8)
+            line(((14.0, 3.8), (14.0, 15.2)), 2.0)
+        elif kind == "delete":
+            line(((3.5, 5.0), (15.5, 5.0)), 1.8)
+            line(((7.0, 2.8), (12.0, 2.8)), 1.8)
+            rectangle((5.0, 6.0, 14.0, 16.5), 1.7)
+            line(((8.0, 8.0), (8.0, 14.5)), 1.3)
+            line(((11.0, 8.0), (11.0, 14.5)), 1.3)
+        elif kind == "normal":
+            draw.ellipse((2.5 * scale, 2.5 * scale, 16.5 * scale, 16.5 * scale), outline=color, width=round(1.6 * scale))
+            line(((5.5, 9.8), (8.2, 12.2), (13.5, 6.5)), 2.0)
+        elif kind == "crack":
+            line(((10.5, 1.8), (5.5, 8.0), (9.0, 9.0), (6.5, 17.2), (14.2, 7.4), (10.5, 6.6), (10.5, 1.8)), 1.9)
+        elif kind == "residue":
+            for x, y, radius in ((6.0, 6.5, 2.1), (12.5, 7.5, 1.6), (9.0, 13.0, 2.5)):
+                draw.ellipse(((x - radius) * scale, (y - radius) * scale, (x + radius) * scale, (y + radius) * scale), outline=color, width=round(1.6 * scale))
+        elif kind == "undemolded":
+            rectangle((3.0, 4.0, 14.0, 13.0), 1.5)
+            rectangle((6.0, 7.0, 17.0, 16.0), 1.5)
+
+        image = image.resize((size, size), Image.Resampling.LANCZOS)
+        return ImageTk.PhotoImage(image, master=self.root)
+
+    def _build_icons(self) -> None:
+        icon_specs = {
+            "folder": ("folder", "#31A8FF"),
+            "refresh": ("refresh", "#B9B9B9"),
+            "undo": ("undo", "#B9B9B9"),
+            "settings": ("settings", "#B9B9B9"),
+            "target": ("target", "#9AC8E2"),
+            "previous": ("previous", "#B9B9B9"),
+            "skip": ("skip", "#B9B9B9"),
+            "next": ("next", "#B9B9B9"),
+            "delete": ("delete", "#E29A9A"),
+            "normal": ("normal", "#72B879"),
+            "crack": ("crack", "#DB7777"),
+            "residue": ("residue", "#E7A35F"),
+            "undemolded": ("undemolded", "#70A9DA"),
+        }
+        self.icons = {name: self._draw_icon(kind, color) for name, (kind, color) in icon_specs.items()}
 
     def _build_style(self) -> None:
         style = ttk.Style(self.root)
@@ -429,33 +517,35 @@ class ImageClassifierApp:
             return menu
 
         file_menu = add_menu_button("文件")
-        file_menu.add_command(label="打开图片目录", accelerator="Ctrl+O", command=self.choose_source)
-        file_menu.add_command(label="重新扫描", accelerator="F5", command=self.reload_images)
-        file_menu.add_command(label="打开当前图片所在目录", command=self.open_current_folder)
+        file_menu.add_command(label="打开图片目录", image=self.icons["folder"], compound="left", accelerator="Ctrl+O", command=self.choose_source)
+        file_menu.add_command(label="重新扫描", image=self.icons["refresh"], compound="left", accelerator="F5", command=self.reload_images)
+        file_menu.add_command(label="打开当前图片所在目录", image=self.icons["target"], compound="left", command=self.open_current_folder)
         file_menu.add_separator()
         file_menu.add_command(label="退出", accelerator="Ctrl+Q", command=self.close)
 
         edit_menu = add_menu_button("编辑")
-        edit_menu.add_command(label="撤销", accelerator="Ctrl+Z", command=self.undo)
+        edit_menu.add_command(label="撤销", image=self.icons["undo"], compound="left", accelerator="Ctrl+Z", command=self.undo)
         edit_menu.add_command(label="搜索文件名", accelerator="Ctrl+F", command=self.focus_search)
         edit_menu.add_command(label="清空搜索", accelerator="Esc", command=self.clear_search)
         edit_menu.add_separator()
-        edit_menu.add_command(label="删除当前图片", accelerator="Delete", command=self.delete_current_image)
+        edit_menu.add_command(label="删除当前图片", image=self.icons["delete"], compound="left", accelerator="Delete", command=self.delete_current_image)
 
         self.category_menu = add_menu_button("分类")
         for number, category in enumerate(self.categories, start=1):
             self.category_menu.add_command(
                 label=f"分类为“{category.title}”",
+                image=self.icons[category.key],
+                compound="left",
                 accelerator=str(number),
                 command=lambda c=category: self.classify(c),
             )
             category.menu_index = number - 1  # type: ignore[attr-defined]
         self.category_menu.add_separator()
-        self.category_menu.add_command(label="标记为不分类", accelerator="Space", command=self.skip_image)
+        self.category_menu.add_command(label="标记为不分类", image=self.icons["skip"], compound="left", accelerator="Space", command=self.skip_image)
 
         settings_menu = add_menu_button("设置")
-        settings_menu.add_command(label="设置目标文件夹…", command=self.open_target_settings)
-        settings_menu.add_command(label="编辑分类名称…", command=self.open_category_name_settings)
+        settings_menu.add_command(label="设置目标文件夹…", image=self.icons["target"], compound="left", command=self.open_target_settings)
+        settings_menu.add_command(label="编辑分类名称…", image=self.icons["settings"], compound="left", command=self.open_category_name_settings)
         settings_menu.add_separator()
         mode_menu = self._new_menu(settings_menu)
         mode_menu.add_radiobutton(label="移动图片", value="move", variable=self.mode_var, command=self.save_settings)
@@ -467,8 +557,22 @@ class ImageClassifierApp:
         # 常用操作和四个目标目录放在同一行，减少顶部占用空间。
         top = ttk.Frame(self.root, style="Toolbar.TFrame", padding=(10, 5))
         top.pack(fill="x")
-        ttk.Button(top, text="打开目录", style="Toolbar.TButton", command=self.choose_source).grid(row=0, column=0, padx=(0, 4))
-        ttk.Button(top, text="重新扫描", style="Toolbar.TButton", command=self.reload_images).grid(row=0, column=1, padx=4)
+        ttk.Button(
+            top,
+            text="打开目录",
+            image=self.icons["folder"],
+            compound="left",
+            style="Toolbar.TButton",
+            command=self.choose_source,
+        ).grid(row=0, column=0, padx=(0, 4))
+        ttk.Button(
+            top,
+            text="重新扫描",
+            image=self.icons["refresh"],
+            compound="left",
+            style="Toolbar.TButton",
+            command=self.reload_images,
+        ).grid(row=0, column=1, padx=4)
         ttk.Label(top, text="处理模式", style="Side.TLabel").grid(row=0, column=2, padx=(13, 6))
         mode = ttk.Combobox(top, textvariable=self.mode_var, values=("move", "copy"), state="readonly", width=6)
         mode.grid(row=0, column=3)
@@ -479,6 +583,8 @@ class ImageClassifierApp:
             button = ttk.Button(
                 top,
                 text=f"{category.title}  ·  {category.path.name}",
+                image=self.icons[category.key],
+                compound="left",
                 style="Folder.TButton",
                 command=lambda c=category: self.choose_category_folder(c),
             )
@@ -486,8 +592,22 @@ class ImageClassifierApp:
             category.folder_button = button  # type: ignore[attr-defined]
         spacer_column = 6 + len(self.categories)
         top.columnconfigure(spacer_column, weight=1)
-        ttk.Button(top, text="撤销", style="Toolbar.TButton", command=self.undo).grid(row=0, column=spacer_column + 1, padx=(8, 4), sticky="e")
-        ttk.Button(top, text="全部设置", style="Folder.TButton", command=self.open_target_settings).grid(row=0, column=spacer_column + 2, padx=(4, 0), sticky="e")
+        ttk.Button(
+            top,
+            text="撤销",
+            image=self.icons["undo"],
+            compound="left",
+            style="Toolbar.TButton",
+            command=self.undo,
+        ).grid(row=0, column=spacer_column + 1, padx=(8, 4), sticky="e")
+        ttk.Button(
+            top,
+            text="全部设置",
+            image=self.icons["settings"],
+            compound="left",
+            style="Folder.TButton",
+            command=self.open_target_settings,
+        ).grid(row=0, column=spacer_column + 2, padx=(4, 0), sticky="e")
 
         tk.Frame(self.root, bg=UI_BORDER, height=1).pack(fill="x")
 
@@ -555,7 +675,17 @@ class ImageClassifierApp:
             card = tk.Frame(category_panel, bg=soft, highlightbackground=accent, highlightthickness=1, cursor="hand2")
             card.grid(row=number - 1, column=0, sticky="ew", pady=2)
             card.columnconfigure(0, weight=1)
-            title_label = tk.Label(card, text=category.title, anchor="w", bg=soft, fg=foreground, font=(UI_FONT, 9, "bold"), cursor="hand2")
+            title_label = tk.Label(
+                card,
+                text=category.title,
+                image=self.icons[category.key],
+                compound="left",
+                anchor="w",
+                bg=soft,
+                fg=foreground,
+                font=(UI_FONT, 9, "bold"),
+                cursor="hand2",
+            )
             count_label = tk.Label(card, text="0 张", width=8, anchor="e", bg=soft, fg=foreground, font=(UI_FONT, 9), cursor="hand2")
             title_label.grid(row=0, column=0, sticky="w", padx=(12, 4), pady=7)
             count_label.grid(row=0, column=1, padx=(4, 10), pady=7)
@@ -577,10 +707,10 @@ class ImageClassifierApp:
 
         nav = ttk.Frame(side, style="Side.TFrame")
         nav.grid(row=4, column=0, sticky="ew", pady=(7, 7))
-        ttk.Button(nav, text="上一张", style="Nav.TButton", command=self.previous_image).pack(side="left", expand=True, fill="x", padx=(0, 3))
-        ttk.Button(nav, text="跳过", style="Nav.TButton", command=self.skip_image).pack(side="left", expand=True, fill="x", padx=3)
-        ttk.Button(nav, text="下一张", style="Nav.TButton", command=self.next_image).pack(side="left", expand=True, fill="x", padx=3)
-        ttk.Button(nav, text="删除", style="Danger.TButton", command=self.delete_current_image).pack(side="left", expand=True, fill="x", padx=(3, 0))
+        ttk.Button(nav, text="上一张", image=self.icons["previous"], compound="left", style="Nav.TButton", command=self.previous_image).pack(side="left", expand=True, fill="x", padx=(0, 3))
+        ttk.Button(nav, text="跳过", image=self.icons["skip"], compound="left", style="Nav.TButton", command=self.skip_image).pack(side="left", expand=True, fill="x", padx=3)
+        ttk.Button(nav, text="下一张", image=self.icons["next"], compound="right", style="Nav.TButton", command=self.next_image).pack(side="left", expand=True, fill="x", padx=3)
+        ttk.Button(nav, text="删除", image=self.icons["delete"], compound="left", style="Danger.TButton", command=self.delete_current_image).pack(side="left", expand=True, fill="x", padx=(3, 0))
 
         file_heading = ttk.Frame(side, style="Side.TFrame")
         file_heading.grid(row=5, column=0, sticky="ew", pady=(0, 5))
