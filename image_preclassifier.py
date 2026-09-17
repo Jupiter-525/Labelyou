@@ -9,12 +9,13 @@ import sys
 import tempfile
 import threading
 import tkinter as tk
+import tkinter.font as tkfont
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from PIL import Image, ImageOps, ImageTk
+from PIL import Image, ImageFilter, ImageOps, ImageTk
 
 
 APP_TITLE = "Labelyou"
@@ -39,6 +40,68 @@ UI_TEXT = "#D8D8D8"
 UI_MUTED = "#9A9A9A"
 UI_ACCENT = "#2495D0"
 UI_CANVAS = "#202020"
+UI_FONT = "Microsoft YaHei UI"
+
+
+def enable_windows_high_dpi() -> None:
+    """让 Windows 直接按显示器 DPI 绘制，避免系统把整个窗口位图放大后发虚。"""
+    if sys.platform != "win32":
+        return
+
+    # PER_MONITOR_AWARE_V2 在多显示器和缩放比例变化时效果最好。
+    try:
+        if ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):
+            return
+    except (AttributeError, OSError):
+        pass
+
+    try:
+        # Windows 8.1 及更高版本的兼容回退。
+        if ctypes.windll.shcore.SetProcessDpiAwareness(2) in (0, -2147024891):
+            return
+    except (AttributeError, OSError):
+        pass
+
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()
+    except (AttributeError, OSError):
+        pass
+
+
+def configure_tk_rendering(root: tk.Tk) -> float:
+    """按当前显示器 DPI 配置 Tk 字体，使文字由 ClearType 以原生分辨率绘制。"""
+    dpi = 96
+    if sys.platform == "win32":
+        try:
+            root.update_idletasks()
+            dpi = int(ctypes.windll.user32.GetDpiForWindow(root.winfo_id())) or 96
+        except (AttributeError, OSError, ValueError):
+            dpi = 96
+
+    scale = max(1.0, dpi / 96.0)
+    try:
+        root.tk.call("tk", "scaling", dpi / 72.0)
+    except tk.TclError:
+        pass
+
+    # ttk 与原生 Tk 控件共享这些命名字体，统一后不会出现局部模糊或字号跳变。
+    named_fonts = {
+        "TkDefaultFont": 9,
+        "TkTextFont": 9,
+        "TkMenuFont": 9,
+        "TkHeadingFont": 9,
+        "TkCaptionFont": 9,
+        "TkSmallCaptionFont": 8,
+        "TkIconFont": 9,
+        "TkTooltipFont": 8,
+    }
+    for name, size in named_fonts.items():
+        try:
+            tkfont.nametofont(name).configure(family=UI_FONT, size=size)
+        except tk.TclError:
+            pass
+    root.option_add("*Font", (UI_FONT, 9))
+    return scale
 
 
 @dataclass
@@ -197,25 +260,25 @@ class ImageClassifierApp:
             "TLabel",
             background=UI_BG,
             foreground=UI_TEXT,
-            font=("Microsoft YaHei UI", 9),
+            font=(UI_FONT, 9),
         )
         style.configure("Toolbar.TFrame", background=UI_SURFACE)
         style.configure("Folderbar.TFrame", background=UI_SURFACE_ALT)
         style.configure("Side.TFrame", background=UI_SURFACE)
         style.configure("Status.TFrame", background=UI_SURFACE)
         style.configure("TPanedwindow", background=UI_BG)
-        style.configure("Brand.TLabel", background=UI_SURFACE, foreground="#F0F0F0", font=("Microsoft YaHei UI", 13, "bold"))
-        style.configure("Side.TLabel", background=UI_SURFACE, foreground=UI_TEXT, font=("Microsoft YaHei UI", 9))
-        style.configure("Section.TLabel", background=UI_SURFACE, foreground=UI_TEXT, font=("Microsoft YaHei UI", 10, "bold"))
-        style.configure("Filename.TLabel", background=UI_SURFACE, foreground=UI_TEXT, font=("Microsoft YaHei UI", 9))
-        style.configure("Info.TLabel", foreground=UI_MUTED, font=("Microsoft YaHei UI", 8))
-        style.configure("SideInfo.TLabel", background=UI_SURFACE, foreground=UI_MUTED, font=("Microsoft YaHei UI", 8))
-        style.configure("Folderbar.TLabel", background=UI_SURFACE_ALT, foreground=UI_MUTED, font=("Microsoft YaHei UI", 8))
-        style.configure("Count.TLabel", background=UI_SURFACE, foreground=UI_TEXT, font=("Microsoft YaHei UI", 10, "bold"))
-        style.configure("Card.TLabel", background=UI_SURFACE_ALT, foreground=UI_TEXT, font=("Microsoft YaHei UI", 9))
-        style.configure("CardInfo.TLabel", background=UI_SURFACE_ALT, foreground=UI_MUTED, font=("Microsoft YaHei UI", 8))
-        style.configure("MetricValue.TLabel", background=UI_SURFACE_ALT, foreground="#E6E6E6", font=("Microsoft YaHei UI", 14, "bold"))
-        style.configure("MetricName.TLabel", background=UI_SURFACE_ALT, foreground=UI_MUTED, font=("Microsoft YaHei UI", 8))
+        style.configure("Brand.TLabel", background=UI_SURFACE, foreground="#F2F2F2", font=(UI_FONT, 13, "bold"))
+        style.configure("Side.TLabel", background=UI_SURFACE, foreground=UI_TEXT, font=(UI_FONT, 9))
+        style.configure("Section.TLabel", background=UI_SURFACE, foreground="#E8E8E8", font=(UI_FONT, 10, "bold"))
+        style.configure("Filename.TLabel", background=UI_SURFACE, foreground=UI_TEXT, font=(UI_FONT, 9))
+        style.configure("Info.TLabel", foreground=UI_MUTED, font=(UI_FONT, 8))
+        style.configure("SideInfo.TLabel", background=UI_SURFACE, foreground="#A8A8A8", font=(UI_FONT, 8))
+        style.configure("Folderbar.TLabel", background=UI_SURFACE_ALT, foreground="#A8A8A8", font=(UI_FONT, 8))
+        style.configure("Count.TLabel", background=UI_SURFACE, foreground=UI_TEXT, font=(UI_FONT, 10, "bold"))
+        style.configure("Card.TLabel", background=UI_SURFACE_ALT, foreground="#E3E3E3", font=(UI_FONT, 9))
+        style.configure("CardInfo.TLabel", background=UI_SURFACE_ALT, foreground="#A8A8A8", font=(UI_FONT, 8))
+        style.configure("MetricValue.TLabel", background=UI_SURFACE_ALT, foreground="#F0F0F0", font=(UI_FONT, 14, "bold"))
+        style.configure("MetricName.TLabel", background=UI_SURFACE_ALT, foreground="#A8A8A8", font=(UI_FONT, 8))
         style.configure(
             "TButton",
             background=UI_SURFACE,
@@ -223,7 +286,7 @@ class ImageClassifierApp:
             bordercolor=UI_BORDER,
             lightcolor=UI_SURFACE,
             darkcolor=UI_SURFACE,
-            font=("Microsoft YaHei UI", 9),
+            font=(UI_FONT, 9),
             padding=(8, 5),
         )
         style.map(
@@ -239,7 +302,7 @@ class ImageClassifierApp:
             bordercolor="#484848",
             lightcolor="#2B2B2B",
             darkcolor="#2B2B2B",
-            font=("Microsoft YaHei UI", 8),
+            font=(UI_FONT, 8),
             padding=(8, 3),
         )
         style.map("Folder.TButton", background=[("active", "#353535"), ("pressed", "#3D3D3D")])
@@ -344,7 +407,7 @@ class ImageClassifierApp:
         current_card.grid(row=0, column=0, sticky="ew")
         current_header = ttk.Frame(current_card, style="Folderbar.TFrame")
         current_header.pack(fill="x")
-        ttk.Label(current_header, text="当前图片", style="Card.TLabel", font=("Microsoft YaHei UI", 10, "bold")).pack(side="left")
+        ttk.Label(current_header, text="当前图片", style="Card.TLabel", font=(UI_FONT, 10, "bold")).pack(side="left")
         ttk.Label(current_header, textvariable=self.count_var, style="CardInfo.TLabel").pack(side="right")
         ttk.Label(current_card, textvariable=self.file_var, style="Card.TLabel", wraplength=320).pack(anchor="w", pady=(5, 2))
         ttk.Label(current_card, textvariable=self.detail_var, style="CardInfo.TLabel").pack(anchor="w")
@@ -380,9 +443,9 @@ class ImageClassifierApp:
             card = tk.Frame(category_panel, bg=soft, highlightbackground=accent, highlightthickness=1, cursor="hand2")
             card.grid(row=number - 1, column=0, sticky="ew", pady=2)
             card.columnconfigure(1, weight=1)
-            key_label = tk.Label(card, text=str(number), width=3, bg=soft, fg=foreground, font=("Microsoft YaHei UI", 9, "bold"), cursor="hand2")
-            title_label = tk.Label(card, text=category.title, anchor="w", bg=soft, fg=foreground, font=("Microsoft YaHei UI", 9, "bold"), cursor="hand2")
-            count_label = tk.Label(card, text="0 张", width=8, anchor="e", bg=soft, fg=foreground, font=("Microsoft YaHei UI", 9), cursor="hand2")
+            key_label = tk.Label(card, text=str(number), width=3, bg=soft, fg=foreground, font=(UI_FONT, 9, "bold"), cursor="hand2")
+            title_label = tk.Label(card, text=category.title, anchor="w", bg=soft, fg=foreground, font=(UI_FONT, 9, "bold"), cursor="hand2")
+            count_label = tk.Label(card, text="0 张", width=8, anchor="e", bg=soft, fg=foreground, font=(UI_FONT, 9), cursor="hand2")
             key_label.grid(row=0, column=0, padx=(7, 2), pady=7)
             title_label.grid(row=0, column=1, sticky="w", pady=7)
             count_label.grid(row=0, column=2, padx=(4, 10), pady=7)
@@ -423,7 +486,7 @@ class ImageClassifierApp:
             borderwidth=0,
             highlightthickness=0,
             activestyle="none",
-            font=("Microsoft YaHei UI", 8),
+            font=(UI_FONT, 8),
             selectborderwidth=0,
         )
         scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.file_list.yview)
@@ -703,7 +766,7 @@ class ImageClassifierApp:
             height / 2,
             text=text,
             fill="#90a4ae",
-            font=("Microsoft YaHei UI", 18),
+            font=(UI_FONT, 18),
             justify="center",
         )
         self.file_var.set("")
@@ -726,12 +789,26 @@ class ImageClassifierApp:
         scale = max(0.03, min(12.0, fit * self.zoom))
         display_width = max(1, int(image_width * scale))
         display_height = max(1, int(image_height * scale))
-        resized = self.original_image.resize((display_width, display_height), Image.Resampling.LANCZOS)
-        self.photo = ImageTk.PhotoImage(resized)
+        if scale < 1.0:
+            # reducing_gap 先做整数级缩小，再用 LANCZOS 精细采样；大图缩小时边缘更干净。
+            resized = self.original_image.resize(
+                (display_width, display_height),
+                Image.Resampling.LANCZOS,
+                reducing_gap=3.0,
+            )
+            # 只补偿缩小造成的轻微软化，不改变源图片，也不过度强化噪点。
+            if 0.3 <= scale <= 0.9:
+                resized = resized.filter(ImageFilter.UnsharpMask(radius=0.55, percent=45, threshold=3))
+        else:
+            resized = self.original_image.resize(
+                (display_width, display_height),
+                Image.Resampling.BICUBIC,
+            )
+        self.photo = ImageTk.PhotoImage(resized, master=self.root)
         self.canvas.delete("all")
         self.canvas.create_image(
-            canvas_width / 2 + self.pan_x,
-            canvas_height / 2 + self.pan_y,
+            round(canvas_width / 2 + self.pan_x),
+            round(canvas_height / 2 + self.pan_y),
             image=self.photo,
             anchor="center",
         )
@@ -1019,7 +1096,9 @@ def main() -> int:
             first.verify()
         print(f"SCAN-TEST OK: {len(images)} images, first={images[0].name}")
         return 0
+    enable_windows_high_dpi()
     root = tk.Tk()
+    configure_tk_rendering(root)
     app = ImageClassifierApp(root, args.data_root)
     if args.smoke_test:
         root.withdraw()
