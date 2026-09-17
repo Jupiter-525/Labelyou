@@ -225,6 +225,7 @@ class ImageClassifierApp:
         self.pan_y = 0.0
         self.drag_anchor: tuple[int, int] | None = None
         self.icons: dict[str, ImageTk.PhotoImage] = {}
+        self.toolbar_icons: dict[str, ImageTk.PhotoImage] = {}
 
         self._build_style()
         self._build_icons()
@@ -348,6 +349,10 @@ class ImageClassifierApp:
             "undemolded": ("undemolded", "#70A9DA"),
         }
         self.icons = {name: self._draw_icon(kind, color) for name, (kind, color) in icon_specs.items()}
+        self.toolbar_icons = {
+            name: self._draw_icon(kind, color, size=27)
+            for name, (kind, color) in icon_specs.items()
+        }
 
     def _build_style(self) -> None:
         style = ttk.Style(self.root)
@@ -396,6 +401,21 @@ class ImageClassifierApp:
         )
         style.configure("Toolbar.TButton", padding=(9, 4))
         style.configure(
+            "ToolIcon.TButton",
+            background=UI_SURFACE,
+            foreground="#E1E1E1",
+            bordercolor="#393939",
+            lightcolor=UI_SURFACE,
+            darkcolor=UI_SURFACE,
+            font=(UI_FONT, 8),
+            padding=(8, 5),
+        )
+        style.map(
+            "ToolIcon.TButton",
+            background=[("active", "#303030"), ("pressed", "#383838")],
+            bordercolor=[("active", "#505050")],
+        )
+        style.configure(
             "Folder.TButton",
             background="#2B2B2B",
             foreground="#D2D2D2",
@@ -406,6 +426,21 @@ class ImageClassifierApp:
             padding=(8, 3),
         )
         style.map("Folder.TButton", background=[("active", "#353535"), ("pressed", "#3D3D3D")])
+        style.configure(
+            "FolderIcon.TButton",
+            background="#272727",
+            foreground="#D5D5D5",
+            bordercolor="#414141",
+            lightcolor="#272727",
+            darkcolor="#272727",
+            font=(UI_FONT, 8),
+            padding=(6, 4),
+        )
+        style.map(
+            "FolderIcon.TButton",
+            background=[("active", "#323232"), ("pressed", "#393939")],
+            bordercolor=[("active", "#565656")],
+        )
         style.configure("Nav.TButton", padding=(7, 7))
         style.configure(
             "Search.TEntry",
@@ -554,60 +589,78 @@ class ImageClassifierApp:
         tk.Frame(self.root, bg="#2F3336", height=1, borderwidth=0).pack(fill="x")
 
     def _build_ui(self) -> None:
-        # 常用操作和四个目标目录放在同一行，减少顶部占用空间。
-        top = ttk.Frame(self.root, style="Toolbar.TFrame", padding=(10, 5))
+        # 采用 Labelme 式工具栏：图标在上、文字在下，并固定关键按钮的占用宽度。
+        top = ttk.Frame(self.root, style="Toolbar.TFrame", padding=(8, 6))
         top.pack(fill="x")
+        self.toolbar = top
         ttk.Button(
             top,
             text="打开目录",
-            image=self.icons["folder"],
-            compound="left",
-            style="Toolbar.TButton",
+            image=self.toolbar_icons["folder"],
+            compound="top",
+            width=9,
+            style="ToolIcon.TButton",
             command=self.choose_source,
-        ).grid(row=0, column=0, padx=(0, 4))
+        ).grid(row=0, column=0, padx=(0, 3), sticky="ns")
         ttk.Button(
             top,
             text="重新扫描",
-            image=self.icons["refresh"],
-            compound="left",
-            style="Toolbar.TButton",
+            image=self.toolbar_icons["refresh"],
+            compound="top",
+            width=9,
+            style="ToolIcon.TButton",
             command=self.reload_images,
-        ).grid(row=0, column=1, padx=4)
-        ttk.Label(top, text="处理模式", style="Side.TLabel").grid(row=0, column=2, padx=(13, 6))
-        mode = ttk.Combobox(top, textvariable=self.mode_var, values=("move", "copy"), state="readonly", width=6)
-        mode.grid(row=0, column=3)
+        ).grid(row=0, column=1, padx=3, sticky="ns")
+
+        tk.Frame(top, bg=UI_BORDER, width=1).grid(row=0, column=2, padx=8, sticky="ns")
+        mode_group = ttk.Frame(top, style="Toolbar.TFrame")
+        mode_group.grid(row=0, column=3, padx=(0, 3), sticky="ns")
+        ttk.Label(mode_group, text="处理模式", style="SideInfo.TLabel").pack(pady=(3, 5))
+        mode = ttk.Combobox(mode_group, textvariable=self.mode_var, values=("move", "copy"), state="readonly", width=7)
+        mode.pack()
         mode.bind("<<ComboboxSelected>>", lambda _event: self.save_settings())
-        tk.Frame(top, bg=UI_BORDER, width=1, height=24).grid(row=0, column=4, padx=12, sticky="ns")
-        ttk.Label(top, text="目标文件夹", style="Side.TLabel").grid(row=0, column=5, padx=(0, 6))
+
+        tk.Frame(top, bg=UI_BORDER, width=1).grid(row=0, column=4, padx=8, sticky="ns")
+        ttk.Label(
+            top,
+            text="目标文件夹",
+            image=self.toolbar_icons["target"],
+            compound="top",
+            style="SideInfo.TLabel",
+        ).grid(row=0, column=5, padx=(0, 5), sticky="ns")
         for column, category in enumerate(self.categories, start=6):
             button = ttk.Button(
                 top,
-                text=f"{category.title}  ·  {category.path.name}",
-                image=self.icons[category.key],
-                compound="left",
-                style="Folder.TButton",
+                text=f"{category.title}\n{category.path.name}",
+                image=self.toolbar_icons[category.key],
+                compound="top",
+                width=14,
+                style="FolderIcon.TButton",
                 command=lambda c=category: self.choose_category_folder(c),
             )
-            button.grid(row=0, column=column, padx=3)
+            button.grid(row=0, column=column, padx=2, sticky="ns")
             category.folder_button = button  # type: ignore[attr-defined]
         spacer_column = 6 + len(self.categories)
-        top.columnconfigure(spacer_column, weight=1)
+        top.columnconfigure(spacer_column, weight=1, minsize=5)
         ttk.Button(
             top,
             text="撤销",
-            image=self.icons["undo"],
-            compound="left",
-            style="Toolbar.TButton",
+            image=self.toolbar_icons["undo"],
+            compound="top",
+            width=8,
+            style="ToolIcon.TButton",
             command=self.undo,
-        ).grid(row=0, column=spacer_column + 1, padx=(8, 4), sticky="e")
-        ttk.Button(
+        ).grid(row=0, column=spacer_column + 1, padx=(4, 3), sticky="nse")
+        self.settings_toolbar_button = ttk.Button(
             top,
             text="全部设置",
-            image=self.icons["settings"],
-            compound="left",
-            style="Folder.TButton",
+            image=self.toolbar_icons["settings"],
+            compound="top",
+            width=9,
+            style="ToolIcon.TButton",
             command=self.open_target_settings,
-        ).grid(row=0, column=spacer_column + 2, padx=(4, 0), sticky="e")
+        )
+        self.settings_toolbar_button.grid(row=0, column=spacer_column + 2, padx=(3, 0), sticky="nse")
 
         tk.Frame(self.root, bg=UI_BORDER, height=1).pack(fill="x")
 
@@ -855,7 +908,7 @@ class ImageClassifierApp:
         for category in self.categories:
             button = getattr(category, "folder_button", None)
             if button is not None:
-                button.configure(text=f"{category.title}  ·  {category.path.name}")
+                button.configure(text=f"{category.title}\n{category.path.name}")
             title_label = getattr(category, "title_label", None)
             if title_label is not None:
                 title_label.configure(text=category.title)
@@ -1496,6 +1549,15 @@ def main() -> int:
             raise RuntimeError("顶部菜单栏创建失败")
         if len(app.menu_buttons) != 4 or any(menu.master is not button for button, menu in app.menu_buttons):
             raise RuntimeError("下拉菜单未正确挂载到菜单按钮")
+        toolbar_buttons = [
+            child
+            for child in app.toolbar.winfo_children()
+            if child.winfo_class() == "TButton"
+        ]
+        if len(toolbar_buttons) != 8 or any(str(button.cget("compound")) != "top" for button in toolbar_buttons):
+            raise RuntimeError("顶部工具栏的图标与文字布局不正确")
+        if app.toolbar.winfo_reqwidth() > 1480:
+            raise RuntimeError("顶部工具栏宽度超过窗口，右侧按钮可能被遮挡")
         app.images = [
             app.source / "station_1_crack.jpg",
             app.source / "station_2_residue.jpg",
