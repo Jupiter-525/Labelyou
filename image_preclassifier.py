@@ -201,11 +201,14 @@ class ImageClassifierApp:
         self.file_var = tk.StringVar(value="")
         self.detail_var = tk.StringVar(value="")
         self.count_var = tk.StringVar(value="0 / 0")
+        self.search_var = tk.StringVar(value="")
+        self.search_result_var = tk.StringVar(value="0 张")
         self.classified_total_var = tk.StringVar(value="0")
         self.skipped_total_var = tk.StringVar(value="0")
         self.remaining_total_var = tk.StringVar(value="0")
         self.dataset_total_var = tk.StringVar(value="0")
         self.category_count_vars = {category.key: tk.StringVar(value="0") for category in self.categories}
+        self.visible_image_indices: list[int] = []
 
         self.original_image: Image.Image | None = None
         self.photo: ImageTk.PhotoImage | None = None
@@ -307,6 +310,23 @@ class ImageClassifierApp:
         )
         style.map("Folder.TButton", background=[("active", "#353535"), ("pressed", "#3D3D3D")])
         style.configure("Nav.TButton", padding=(7, 7))
+        style.configure(
+            "Search.TEntry",
+            fieldbackground="#1F1F1F",
+            foreground="#E6E6E6",
+            bordercolor="#505050",
+            lightcolor="#1F1F1F",
+            darkcolor="#1F1F1F",
+            insertcolor="#FFFFFF",
+            padding=(7, 4),
+            font=(UI_FONT, 8),
+        )
+        style.map(
+            "Search.TEntry",
+            bordercolor=[("focus", UI_ACCENT)],
+            fieldbackground=[("focus", "#222222")],
+        )
+        style.configure("SearchClear.TButton", padding=(5, 3), font=(UI_FONT, 8))
         style.configure(
             "Danger.TButton",
             background="#382626",
@@ -473,8 +493,26 @@ class ImageClassifierApp:
 
         file_heading = ttk.Frame(side, style="Side.TFrame")
         file_heading.grid(row=5, column=0, sticky="ew", pady=(0, 5))
-        ttk.Label(file_heading, text="待分类文件", style="Section.TLabel").pack(side="left")
-        ttk.Label(file_heading, text="列表可滚动，点击可跳转", style="SideInfo.TLabel").pack(side="right")
+        file_heading.columnconfigure(2, weight=1)
+        ttk.Label(file_heading, text="待分类文件", style="Section.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 8))
+        ttk.Label(file_heading, text="搜索", style="SideInfo.TLabel").grid(row=0, column=1, sticky="w", padx=(0, 5))
+        self.search_entry = ttk.Entry(
+            file_heading,
+            textvariable=self.search_var,
+            style="Search.TEntry",
+        )
+        self.search_entry.grid(row=0, column=2, sticky="ew")
+        self.search_entry.bind("<Return>", self.jump_to_first_search_result)
+        self.search_entry.bind("<Escape>", self.clear_search)
+        ttk.Button(
+            file_heading,
+            text="清空",
+            width=4,
+            style="SearchClear.TButton",
+            command=self.clear_search,
+        ).grid(row=0, column=3, padx=(5, 6))
+        ttk.Label(file_heading, textvariable=self.search_result_var, style="SideInfo.TLabel").grid(row=0, column=4, sticky="e")
+        self.search_var.trace_add("write", self.on_search_changed)
         list_frame = tk.Frame(side, bg="#202020", highlightbackground=UI_BORDER, highlightthickness=1)
         list_frame.grid(row=6, column=0, sticky="nsew")
         self.file_list = tk.Listbox(
@@ -499,7 +537,7 @@ class ImageClassifierApp:
         status = ttk.Frame(self.root, style="Status.TFrame", padding=(13, 7))
         status.pack(fill="x")
         ttk.Label(status, textvariable=self.status_var, style="SideInfo.TLabel").pack(side="left")
-        ttk.Label(status, text="A/D 切换  ·  1–4 分类  ·  Space 跳过  ·  Delete 删除  ·  Ctrl+Z 撤销", style="SideInfo.TLabel").pack(side="right")
+        ttk.Label(status, text="Ctrl+F 搜索  ·  A/D 切换  ·  1–4 分类  ·  Space 跳过  ·  Delete 删除  ·  Ctrl+Z 撤销", style="SideInfo.TLabel").pack(side="right")
 
     def _bind_keys(self) -> None:
         self.root.bind("<KeyPress-1>", lambda e: self._shortcut_classify(e, 0))
@@ -512,10 +550,12 @@ class ImageClassifierApp:
         self.root.bind("<KeyPress-D>", lambda e: self._shortcut_navigation(e, 1))
         self.root.bind("<Left>", lambda e: self._shortcut_navigation(e, -1))
         self.root.bind("<Right>", lambda e: self._shortcut_navigation(e, 1))
-        self.root.bind("<space>", lambda _event: self.skip_image())
+        self.root.bind("<space>", self._shortcut_skip)
         self.root.bind("<Delete>", self._shortcut_delete)
         self.root.bind("<Control-z>", lambda _event: self.undo())
         self.root.bind("<Control-Z>", lambda _event: self.undo())
+        self.root.bind("<Control-f>", self.focus_search)
+        self.root.bind("<Control-F>", self.focus_search)
 
     def _shortcut_classify(self, event: tk.Event, category_index: int) -> None:
         if event.widget.winfo_class() in {"Entry", "TEntry", "TCombobox"}:
@@ -534,6 +574,11 @@ class ImageClassifierApp:
         if event.widget.winfo_class() in {"Entry", "TEntry", "TCombobox"}:
             return
         self.delete_current_image()
+
+    def _shortcut_skip(self, event: tk.Event) -> None:
+        if event.widget.winfo_class() in {"Entry", "TEntry", "TCombobox"}:
+            return
+        self.skip_image()
 
     def save_settings(self) -> None:
         self.settings = {
@@ -707,29 +752,75 @@ class ImageClassifierApp:
 
     def refresh_list(self) -> None:
         self.file_list.delete(0, "end")
+        query = self.search_var.get().strip().casefold()
+        keywords = query.split()
         labels: list[str] = []
-        for path in self.images:
+        self.visible_image_indices = []
+        for image_index, path in enumerate(self.images):
             try:
                 label = str(path.relative_to(self.source))
             except ValueError:
                 label = path.name
+            searchable = label.casefold()
+            if keywords and not all(keyword in searchable for keyword in keywords):
+                continue
+            self.visible_image_indices.append(image_index)
             labels.append(label)
         if labels:
             self.file_list.insert("end", *labels)
+        if query:
+            self.search_result_var.set(f"{len(labels)} / {len(self.images)}")
+        else:
+            self.search_result_var.set(f"{len(self.images)} 张")
         self.select_current_in_list()
 
     def select_current_in_list(self) -> None:
         self.file_list.selection_clear(0, "end")
-        if self.images:
-            self.file_list.selection_set(self.index)
-            self.file_list.activate(self.index)
-            self.file_list.see(self.index)
+        if self.images and self.index in self.visible_image_indices:
+            visible_index = self.visible_image_indices.index(self.index)
+            self.file_list.selection_set(visible_index)
+            self.file_list.activate(visible_index)
+            self.file_list.see(visible_index)
 
     def on_list_select(self, _event=None) -> None:
         selection = self.file_list.curselection()
-        if selection:
-            self.index = selection[0]
+        if selection and selection[0] < len(self.visible_image_indices):
+            self.index = self.visible_image_indices[selection[0]]
             self.show_current()
+
+    def on_search_changed(self, *_args) -> None:
+        self.refresh_list()
+
+    def jump_to_first_search_result(self, _event=None) -> str:
+        if self.visible_image_indices:
+            self.index = self.visible_image_indices[0]
+            self.show_current()
+            self.status_var.set(f"已跳转到第一个搜索结果：{self.images[self.index].name}")
+        else:
+            self.status_var.set(f"没有找到包含“{self.search_var.get().strip()}”的图片")
+        return "break"
+
+    def clear_search(self, _event=None) -> str:
+        self.search_var.set("")
+        self.search_entry.focus_set()
+        self.status_var.set("已清空文件名搜索")
+        return "break"
+
+    def focus_search(self, _event=None) -> str:
+        self.search_entry.focus_set()
+        self.search_entry.selection_range(0, "end")
+        return "break"
+
+    def align_index_to_search_results(self) -> None:
+        """分类后优先显示下一张符合当前搜索条件的图片。"""
+        if not self.search_var.get().strip() or not self.visible_image_indices:
+            return
+        if self.index in self.visible_image_indices:
+            return
+        self.index = next(
+            (image_index for image_index in self.visible_image_indices if image_index >= self.index),
+            self.visible_image_indices[0],
+        )
 
     def show_current(self) -> None:
         if not self.images:
@@ -871,9 +962,10 @@ class ImageClassifierApp:
             self.append_log({"action": "classify", **record})
             removed_index = self.index
             self.images.pop(removed_index)
-            self.file_list.delete(removed_index)
             if self.index >= len(self.images):
                 self.index = max(0, len(self.images) - 1)
+            self.refresh_list()
+            self.align_index_to_search_results()
             self.update_category_counts()
             self.show_current()
             verb = "复制" if mode == "copy" else "移动"
@@ -993,9 +1085,10 @@ class ImageClassifierApp:
         self.append_log({"action": "skip", **record})
         removed_index = self.index
         self.images.pop(removed_index)
-        self.file_list.delete(removed_index)
         if self.index >= len(self.images):
             self.index = max(0, len(self.images) - 1)
+        self.refresh_list()
+        self.align_index_to_search_results()
         self.update_category_counts()
         self.show_current()
         self.status_var.set(f"已标记为不分类：{source.name}")
@@ -1025,9 +1118,10 @@ class ImageClassifierApp:
             self.append_log(record)
             removed_index = self.index
             self.images.pop(removed_index)
-            self.file_list.delete(removed_index)
             if self.index >= len(self.images):
                 self.index = max(0, len(self.images) - 1)
+            self.refresh_list()
+            self.align_index_to_search_results()
             self.update_category_counts()
             self.show_current()
             self.status_var.set(f"已永久删除：{source.name}")
@@ -1105,6 +1199,17 @@ def main() -> int:
         root.update_idletasks()
         if not app.canvas.winfo_exists() or not app.file_list.winfo_exists():
             raise RuntimeError("界面控件创建失败")
+        app.images = [
+            app.source / "station_1_crack.jpg",
+            app.source / "station_2_residue.jpg",
+            app.source / "station_2_undemolded.jpg",
+        ]
+        app.search_var.set("station_2 residue")
+        if app.visible_image_indices != [1] or app.file_list.size() != 1:
+            raise RuntimeError("文件名关键词搜索测试失败")
+        app.search_var.set("")
+        if app.visible_image_indices != [0, 1, 2] or app.file_list.size() != 3:
+            raise RuntimeError("清空文件名搜索测试失败")
         print("UI-SMOKE-TEST OK")
         root.destroy()
         return 0
