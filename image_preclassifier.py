@@ -266,8 +266,10 @@ class ImageClassifierApp:
 
     def _draw_icon(self, kind: str, color: str = "#B8B8B8", size: int = 19) -> ImageTk.PhotoImage:
         """以高分辨率绘制简洁线性图标，再缩小以获得清晰的抗锯齿边缘。"""
-        scale = 4
-        canvas_size = size * scale
+        supersample = 4
+        # 图形按 19×19 的设计坐标绘制；根据目标尺寸同步放大坐标，避免只放大透明画布。
+        scale = supersample * size / 19.0
+        canvas_size = size * supersample
         image = Image.new("RGBA", (canvas_size, canvas_size), (0, 0, 0, 0))
         draw = ImageDraw.Draw(image)
 
@@ -275,32 +277,31 @@ class ImageClassifierApp:
             return [(round(x * scale), round(y * scale)) for x, y in values]
 
         def line(values: tuple[tuple[float, float], ...], width: float = 1.8, fill: str = color) -> None:
-            draw.line(points(values), fill=fill, width=max(1, round(width * scale)), joint="curve")
+            draw.line(points(values), fill=fill, width=max(1, round(width * supersample)), joint="curve")
 
         def rectangle(box: tuple[float, float, float, float], width: float = 1.7, fill: str = color) -> None:
             draw.rounded_rectangle(
                 tuple(round(value * scale) for value in box),
                 radius=round(1.4 * scale),
                 outline=fill,
-                width=max(1, round(width * scale)),
+                width=max(1, round(width * supersample)),
             )
 
         if kind in {"folder", "target"}:
             line(((2.0, 6.0), (7.0, 6.0), (8.6, 8.0), (17.0, 8.0), (15.5, 16.0), (2.0, 16.0), (2.0, 6.0)))
             if kind == "target":
-                draw.ellipse((11 * scale, 2 * scale, 17 * scale, 8 * scale), outline=color, width=round(1.5 * scale))
+                draw.ellipse((11 * scale, 2 * scale, 17 * scale, 8 * scale), outline=color, width=round(1.5 * supersample))
                 line(((14.0, 3.5), (14.0, 6.5)), 1.4)
                 line(((12.5, 5.0), (15.5, 5.0)), 1.4)
         elif kind == "refresh":
-            draw.arc((3 * scale, 3 * scale, 16 * scale, 16 * scale), 35, 315, fill=color, width=round(1.8 * scale))
+            draw.arc((3 * scale, 3 * scale, 16 * scale, 16 * scale), 35, 315, fill=color, width=round(1.8 * supersample))
             draw.polygon(points(((14.0, 2.7), (17.2, 4.2), (14.8, 6.2))), fill=color)
         elif kind == "undo":
-            draw.arc((4 * scale, 5 * scale, 17 * scale, 16 * scale), 205, 515, fill=color, width=round(1.8 * scale))
+            draw.arc((4 * scale, 5 * scale, 17 * scale, 16 * scale), 205, 515, fill=color, width=round(1.8 * supersample))
             draw.polygon(points(((2.0, 8.0), (7.0, 4.5), (7.0, 11.0))), fill=color)
         elif kind == "settings":
-            center = 9.5 * scale
-            draw.ellipse((5.0 * scale, 5.0 * scale, 14.0 * scale, 14.0 * scale), outline=color, width=round(1.7 * scale))
-            draw.ellipse((8.0 * scale, 8.0 * scale, 11.0 * scale, 11.0 * scale), outline=color, width=round(1.5 * scale))
+            draw.ellipse((5.0 * scale, 5.0 * scale, 14.0 * scale, 14.0 * scale), outline=color, width=round(1.7 * supersample))
+            draw.ellipse((8.0 * scale, 8.0 * scale, 11.0 * scale, 11.0 * scale), outline=color, width=round(1.5 * supersample))
             for x1, y1, x2, y2 in ((9.5, 1.5, 9.5, 4.1), (9.5, 14.9, 9.5, 17.5), (1.5, 9.5, 4.1, 9.5), (14.9, 9.5, 17.5, 9.5), (3.8, 3.8, 5.5, 5.5), (13.5, 13.5, 15.2, 15.2), (15.2, 3.8, 13.5, 5.5), (5.5, 13.5, 3.8, 15.2)):
                 line(((x1, y1), (x2, y2)), 1.7)
         elif kind in {"previous", "next"}:
@@ -318,13 +319,13 @@ class ImageClassifierApp:
             line(((8.0, 8.0), (8.0, 14.5)), 1.3)
             line(((11.0, 8.0), (11.0, 14.5)), 1.3)
         elif kind == "normal":
-            draw.ellipse((2.5 * scale, 2.5 * scale, 16.5 * scale, 16.5 * scale), outline=color, width=round(1.6 * scale))
+            draw.ellipse((2.5 * scale, 2.5 * scale, 16.5 * scale, 16.5 * scale), outline=color, width=round(1.6 * supersample))
             line(((5.5, 9.8), (8.2, 12.2), (13.5, 6.5)), 2.0)
         elif kind == "crack":
             line(((10.5, 1.8), (5.5, 8.0), (9.0, 9.0), (6.5, 17.2), (14.2, 7.4), (10.5, 6.6), (10.5, 1.8)), 1.9)
         elif kind == "residue":
             for x, y, radius in ((6.0, 6.5, 2.1), (12.5, 7.5, 1.6), (9.0, 13.0, 2.5)):
-                draw.ellipse(((x - radius) * scale, (y - radius) * scale, (x + radius) * scale, (y + radius) * scale), outline=color, width=round(1.6 * scale))
+                draw.ellipse(((x - radius) * scale, (y - radius) * scale, (x + radius) * scale, (y + radius) * scale), outline=color, width=round(1.6 * supersample))
         elif kind == "undemolded":
             rectangle((3.0, 4.0, 14.0, 13.0), 1.5)
             rectangle((6.0, 7.0, 17.0, 16.0), 1.5)
@@ -350,7 +351,7 @@ class ImageClassifierApp:
         }
         self.icons = {name: self._draw_icon(kind, color) for name, (kind, color) in icon_specs.items()}
         self.toolbar_icons = {
-            name: self._draw_icon(kind, color, size=32)
+            name: self._draw_icon(kind, color, size=36)
             for name, (kind, color) in icon_specs.items()
         }
 
