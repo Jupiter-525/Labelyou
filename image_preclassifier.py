@@ -350,7 +350,7 @@ class ImageClassifierApp:
         }
         self.icons = {name: self._draw_icon(kind, color) for name, (kind, color) in icon_specs.items()}
         self.toolbar_icons = {
-            name: self._draw_icon(kind, color, size=27)
+            name: self._draw_icon(kind, color, size=32)
             for name, (kind, color) in icon_specs.items()
         }
 
@@ -404,16 +404,22 @@ class ImageClassifierApp:
             "ToolIcon.TButton",
             background=UI_SURFACE,
             foreground="#E1E1E1",
-            bordercolor="#393939",
             lightcolor=UI_SURFACE,
             darkcolor=UI_SURFACE,
             font=(UI_FONT, 8),
-            padding=(8, 5),
+            padding=(10, 6),
+            borderwidth=0,
+            relief="flat",
+            focuscolor=UI_SURFACE,
+            focusthickness=0,
+        )
+        style.layout(
+            "ToolIcon.TButton",
+            [("Button.padding", {"sticky": "nswe", "children": [("Button.label", {"sticky": "nswe"})]})],
         )
         style.map(
             "ToolIcon.TButton",
-            background=[("active", "#303030"), ("pressed", "#383838")],
-            bordercolor=[("active", "#505050")],
+            background=[("active", "#2B2B2B"), ("pressed", "#333333")],
         )
         style.configure(
             "Folder.TButton",
@@ -428,18 +434,24 @@ class ImageClassifierApp:
         style.map("Folder.TButton", background=[("active", "#353535"), ("pressed", "#3D3D3D")])
         style.configure(
             "FolderIcon.TButton",
-            background="#272727",
+            background=UI_SURFACE,
             foreground="#D5D5D5",
-            bordercolor="#414141",
-            lightcolor="#272727",
-            darkcolor="#272727",
+            lightcolor=UI_SURFACE,
+            darkcolor=UI_SURFACE,
             font=(UI_FONT, 8),
-            padding=(6, 4),
+            padding=(10, 6),
+            borderwidth=0,
+            relief="flat",
+            focuscolor=UI_SURFACE,
+            focusthickness=0,
+        )
+        style.layout(
+            "FolderIcon.TButton",
+            [("Button.padding", {"sticky": "nswe", "children": [("Button.label", {"sticky": "nswe"})]})],
         )
         style.map(
             "FolderIcon.TButton",
-            background=[("active", "#323232"), ("pressed", "#393939")],
-            bordercolor=[("active", "#565656")],
+            background=[("active", "#2B2B2B"), ("pressed", "#333333")],
         )
         style.configure("Nav.TButton", padding=(7, 7))
         style.configure(
@@ -631,10 +643,10 @@ class ImageClassifierApp:
         for column, category in enumerate(self.categories, start=6):
             button = ttk.Button(
                 top,
-                text=f"{category.title}\n{category.path.name}",
+                text=category.title,
                 image=self.toolbar_icons[category.key],
                 compound="top",
-                width=14,
+                width=9,
                 style="FolderIcon.TButton",
                 command=lambda c=category: self.choose_category_folder(c),
             )
@@ -908,7 +920,7 @@ class ImageClassifierApp:
         for category in self.categories:
             button = getattr(category, "folder_button", None)
             if button is not None:
-                button.configure(text=f"{category.title}\n{category.path.name}")
+                button.configure(text=category.title)
             title_label = getattr(category, "title_label", None)
             if title_label is not None:
                 title_label.configure(text=category.title)
