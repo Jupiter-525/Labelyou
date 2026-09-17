@@ -402,11 +402,12 @@ class ImageClassifierApp:
         )
         self.menu_bar.pack(fill="x")
 
-        def add_menu_button(label: str, menu: tk.Menu) -> None:
+        self.menu_buttons: list[tuple[tk.Menubutton, tk.Menu]] = []
+
+        def add_menu_button(label: str) -> tk.Menu:
             button = tk.Menubutton(
                 self.menu_bar,
                 text=label,
-                menu=menu,
                 bg=UI_MENUBAR,
                 fg="#E8E8E8",
                 activebackground="#2B2E31",
@@ -420,25 +421,28 @@ class ImageClassifierApp:
                 font=(UI_FONT, 9),
                 cursor="hand2",
             )
+            # Windows 下 Menu 必须以对应 Menubutton 为父控件，点击才能稳定弹出。
+            menu = self._new_menu(button)
+            button.configure(menu=menu)
             button.pack(side="left")
+            self.menu_buttons.append((button, menu))
+            return menu
 
-        file_menu = self._new_menu(self.root)
+        file_menu = add_menu_button("文件")
         file_menu.add_command(label="打开图片目录", accelerator="Ctrl+O", command=self.choose_source)
         file_menu.add_command(label="重新扫描", accelerator="F5", command=self.reload_images)
         file_menu.add_command(label="打开当前图片所在目录", command=self.open_current_folder)
         file_menu.add_separator()
         file_menu.add_command(label="退出", accelerator="Ctrl+Q", command=self.close)
-        add_menu_button("文件", file_menu)
 
-        edit_menu = self._new_menu(self.root)
+        edit_menu = add_menu_button("编辑")
         edit_menu.add_command(label="撤销", accelerator="Ctrl+Z", command=self.undo)
         edit_menu.add_command(label="搜索文件名", accelerator="Ctrl+F", command=self.focus_search)
         edit_menu.add_command(label="清空搜索", accelerator="Esc", command=self.clear_search)
         edit_menu.add_separator()
         edit_menu.add_command(label="删除当前图片", accelerator="Delete", command=self.delete_current_image)
-        add_menu_button("编辑", edit_menu)
 
-        self.category_menu = self._new_menu(self.root)
+        self.category_menu = add_menu_button("分类")
         for number, category in enumerate(self.categories, start=1):
             self.category_menu.add_command(
                 label=f"分类为“{category.title}”",
@@ -448,9 +452,8 @@ class ImageClassifierApp:
             category.menu_index = number - 1  # type: ignore[attr-defined]
         self.category_menu.add_separator()
         self.category_menu.add_command(label="标记为不分类", accelerator="Space", command=self.skip_image)
-        add_menu_button("分类", self.category_menu)
 
-        settings_menu = self._new_menu(self.root)
+        settings_menu = add_menu_button("设置")
         settings_menu.add_command(label="设置目标文件夹…", command=self.open_target_settings)
         settings_menu.add_command(label="编辑分类名称…", command=self.open_category_name_settings)
         settings_menu.add_separator()
@@ -458,8 +461,6 @@ class ImageClassifierApp:
         mode_menu.add_radiobutton(label="移动图片", value="move", variable=self.mode_var, command=self.save_settings)
         mode_menu.add_radiobutton(label="复制图片", value="copy", variable=self.mode_var, command=self.save_settings)
         settings_menu.add_cascade(label="处理模式", menu=mode_menu)
-        add_menu_button("设置", settings_menu)
-
         tk.Frame(self.root, bg="#2F3336", height=1, borderwidth=0).pack(fill="x")
 
     def _build_ui(self) -> None:
@@ -1363,6 +1364,8 @@ def main() -> int:
         ]
         if menu_labels != ["文件", "编辑", "分类", "设置"]:
             raise RuntimeError("顶部菜单栏创建失败")
+        if len(app.menu_buttons) != 4 or any(menu.master is not button for button, menu in app.menu_buttons):
+            raise RuntimeError("下拉菜单未正确挂载到菜单按钮")
         app.images = [
             app.source / "station_1_crack.jpg",
             app.source / "station_2_residue.jpg",
