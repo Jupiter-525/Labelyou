@@ -185,8 +185,15 @@ class ImageClassifierApp:
         self.data_root = Path(data_root or self.settings.get("data_root", default_data_root))
         self.source = Path(self.settings.get("source", self.data_root / "手模数据集"))
         saved_targets = self.settings.get("targets", {})
+        saved_titles = self.settings.get("category_titles", {})
         self.categories = [
-            Category(key, title, folder, color, Path(saved_targets.get(key, self.data_root / folder)))
+            Category(
+                key,
+                str(saved_titles.get(key, title)).strip() or title,
+                folder,
+                color,
+                Path(saved_targets.get(key, self.data_root / folder)),
+            )
             for key, title, folder, color in CATEGORY_SPECS
         ]
 
@@ -218,6 +225,7 @@ class ImageClassifierApp:
         self.drag_anchor: tuple[int, int] | None = None
 
         self._build_style()
+        self._build_menu()
         self._build_ui()
         self._bind_keys()
         self.root.protocol("WM_DELETE_WINDOW", self.close)
@@ -370,6 +378,73 @@ class ImageClassifierApp:
             thickness=5,
         )
 
+    def _new_menu(self, parent: tk.Menu) -> tk.Menu:
+        return tk.Menu(
+            parent,
+            tearoff=False,
+            bg=UI_SURFACE_ALT,
+            fg=UI_TEXT,
+            activebackground="#3A3A3A",
+            activeforeground="#FFFFFF",
+            disabledforeground="#777777",
+            borderwidth=0,
+            relief="flat",
+            font=(UI_FONT, 9),
+        )
+
+    def _build_menu(self) -> None:
+        self.menu_bar = tk.Menu(
+            self.root,
+            tearoff=False,
+            bg=UI_SURFACE,
+            fg=UI_TEXT,
+            activebackground="#353535",
+            activeforeground="#FFFFFF",
+            borderwidth=0,
+            relief="flat",
+            font=(UI_FONT, 9),
+        )
+
+        file_menu = self._new_menu(self.menu_bar)
+        file_menu.add_command(label="打开图片目录", accelerator="Ctrl+O", command=self.choose_source)
+        file_menu.add_command(label="重新扫描", accelerator="F5", command=self.reload_images)
+        file_menu.add_command(label="打开当前图片所在目录", command=self.open_current_folder)
+        file_menu.add_separator()
+        file_menu.add_command(label="退出", accelerator="Ctrl+Q", command=self.close)
+        self.menu_bar.add_cascade(label="文件", menu=file_menu)
+
+        edit_menu = self._new_menu(self.menu_bar)
+        edit_menu.add_command(label="撤销", accelerator="Ctrl+Z", command=self.undo)
+        edit_menu.add_command(label="搜索文件名", accelerator="Ctrl+F", command=self.focus_search)
+        edit_menu.add_command(label="清空搜索", accelerator="Esc", command=self.clear_search)
+        edit_menu.add_separator()
+        edit_menu.add_command(label="删除当前图片", accelerator="Delete", command=self.delete_current_image)
+        self.menu_bar.add_cascade(label="编辑", menu=edit_menu)
+
+        self.category_menu = self._new_menu(self.menu_bar)
+        for number, category in enumerate(self.categories, start=1):
+            self.category_menu.add_command(
+                label=f"分类为“{category.title}”",
+                accelerator=str(number),
+                command=lambda c=category: self.classify(c),
+            )
+            category.menu_index = number - 1  # type: ignore[attr-defined]
+        self.category_menu.add_separator()
+        self.category_menu.add_command(label="标记为不分类", accelerator="Space", command=self.skip_image)
+        self.menu_bar.add_cascade(label="分类", menu=self.category_menu)
+
+        settings_menu = self._new_menu(self.menu_bar)
+        settings_menu.add_command(label="设置目标文件夹…", command=self.open_target_settings)
+        settings_menu.add_command(label="编辑分类名称…", command=self.open_category_name_settings)
+        settings_menu.add_separator()
+        mode_menu = self._new_menu(settings_menu)
+        mode_menu.add_radiobutton(label="移动图片", value="move", variable=self.mode_var, command=self.save_settings)
+        mode_menu.add_radiobutton(label="复制图片", value="copy", variable=self.mode_var, command=self.save_settings)
+        settings_menu.add_cascade(label="处理模式", menu=mode_menu)
+        self.menu_bar.add_cascade(label="设置", menu=settings_menu)
+
+        self.root.configure(menu=self.menu_bar)
+
     def _build_ui(self) -> None:
         # 第一行直接展示四个目标目录，点击任一按钮即可单独更换。
         top = ttk.Frame(self.root, style="Toolbar.TFrame", padding=(12, 5))
@@ -400,7 +475,7 @@ class ImageClassifierApp:
         mode = ttk.Combobox(toolbar, textvariable=self.mode_var, values=("move", "copy"), state="readonly", width=7)
         mode.pack(side="left")
         mode.bind("<<ComboboxSelected>>", lambda _event: self.save_settings())
-        ttk.Button(toolbar, text="撤销  Ctrl+Z", style="Toolbar.TButton", command=self.undo).pack(side="right", padx=3)
+        ttk.Button(toolbar, text="撤销", style="Toolbar.TButton", command=self.undo).pack(side="right", padx=3)
 
         tk.Frame(self.root, bg=UI_BORDER, height=1).pack(fill="x")
 
@@ -453,7 +528,12 @@ class ImageClassifierApp:
         heading = ttk.Frame(side, style="Side.TFrame")
         heading.grid(row=2, column=0, sticky="ew", pady=(0, 5))
         ttk.Label(heading, text="分类", style="Section.TLabel").pack(side="left")
-        ttk.Label(heading, text="快捷键 1–4", style="SideInfo.TLabel").pack(side="right")
+        ttk.Button(
+            heading,
+            text="编辑名称",
+            style="SearchClear.TButton",
+            command=self.open_category_name_settings,
+        ).pack(side="right")
 
         category_panel = ttk.Frame(side, style="Side.TFrame")
         category_panel.grid(row=3, column=0, sticky="ew")
@@ -462,14 +542,12 @@ class ImageClassifierApp:
             soft, hover, foreground, accent = CATEGORY_THEMES[category.key]
             card = tk.Frame(category_panel, bg=soft, highlightbackground=accent, highlightthickness=1, cursor="hand2")
             card.grid(row=number - 1, column=0, sticky="ew", pady=2)
-            card.columnconfigure(1, weight=1)
-            key_label = tk.Label(card, text=str(number), width=3, bg=soft, fg=foreground, font=(UI_FONT, 9, "bold"), cursor="hand2")
+            card.columnconfigure(0, weight=1)
             title_label = tk.Label(card, text=category.title, anchor="w", bg=soft, fg=foreground, font=(UI_FONT, 9, "bold"), cursor="hand2")
             count_label = tk.Label(card, text="0 张", width=8, anchor="e", bg=soft, fg=foreground, font=(UI_FONT, 9), cursor="hand2")
-            key_label.grid(row=0, column=0, padx=(7, 2), pady=7)
-            title_label.grid(row=0, column=1, sticky="w", pady=7)
-            count_label.grid(row=0, column=2, padx=(4, 10), pady=7)
-            widgets = (card, key_label, title_label, count_label)
+            title_label.grid(row=0, column=0, sticky="w", padx=(12, 4), pady=7)
+            count_label.grid(row=0, column=1, padx=(4, 10), pady=7)
+            widgets = (card, title_label, count_label)
 
             def classify_card(_event=None, c=category):
                 self.classify(c)
@@ -483,13 +561,14 @@ class ImageClassifierApp:
                 widget.bind("<Enter>", lambda _event, color=hover, items=widgets: paint_card(color, items))
                 widget.bind("<Leave>", lambda _event, color=soft, items=widgets: paint_card(color, items))
             category.count_label = count_label  # type: ignore[attr-defined]
+            category.title_label = title_label  # type: ignore[attr-defined]
 
         nav = ttk.Frame(side, style="Side.TFrame")
         nav.grid(row=4, column=0, sticky="ew", pady=(7, 7))
-        ttk.Button(nav, text="A  上一张", style="Nav.TButton", command=self.previous_image).pack(side="left", expand=True, fill="x", padx=(0, 3))
-        ttk.Button(nav, text="Space  跳过", style="Nav.TButton", command=self.skip_image).pack(side="left", expand=True, fill="x", padx=3)
-        ttk.Button(nav, text="下一张  D", style="Nav.TButton", command=self.next_image).pack(side="left", expand=True, fill="x", padx=3)
-        ttk.Button(nav, text="删除  Del", style="Danger.TButton", command=self.delete_current_image).pack(side="left", expand=True, fill="x", padx=(3, 0))
+        ttk.Button(nav, text="上一张", style="Nav.TButton", command=self.previous_image).pack(side="left", expand=True, fill="x", padx=(0, 3))
+        ttk.Button(nav, text="跳过", style="Nav.TButton", command=self.skip_image).pack(side="left", expand=True, fill="x", padx=3)
+        ttk.Button(nav, text="下一张", style="Nav.TButton", command=self.next_image).pack(side="left", expand=True, fill="x", padx=3)
+        ttk.Button(nav, text="删除", style="Danger.TButton", command=self.delete_current_image).pack(side="left", expand=True, fill="x", padx=(3, 0))
 
         file_heading = ttk.Frame(side, style="Side.TFrame")
         file_heading.grid(row=5, column=0, sticky="ew", pady=(0, 5))
@@ -537,7 +616,6 @@ class ImageClassifierApp:
         status = ttk.Frame(self.root, style="Status.TFrame", padding=(13, 7))
         status.pack(fill="x")
         ttk.Label(status, textvariable=self.status_var, style="SideInfo.TLabel").pack(side="left")
-        ttk.Label(status, text="Ctrl+F 搜索  ·  A/D 切换  ·  1–4 分类  ·  Space 跳过  ·  Delete 删除  ·  Ctrl+Z 撤销", style="SideInfo.TLabel").pack(side="right")
 
     def _bind_keys(self) -> None:
         self.root.bind("<KeyPress-1>", lambda e: self._shortcut_classify(e, 0))
@@ -552,10 +630,16 @@ class ImageClassifierApp:
         self.root.bind("<Right>", lambda e: self._shortcut_navigation(e, 1))
         self.root.bind("<space>", self._shortcut_skip)
         self.root.bind("<Delete>", self._shortcut_delete)
-        self.root.bind("<Control-z>", lambda _event: self.undo())
-        self.root.bind("<Control-Z>", lambda _event: self.undo())
+        self.root.bind("<Control-z>", self._shortcut_undo)
+        self.root.bind("<Control-Z>", self._shortcut_undo)
         self.root.bind("<Control-f>", self.focus_search)
         self.root.bind("<Control-F>", self.focus_search)
+        self.root.bind("<Control-o>", lambda _event: self.choose_source())
+        self.root.bind("<Control-O>", lambda _event: self.choose_source())
+        self.root.bind("<F5>", lambda _event: self.reload_images())
+        self.root.bind("<Control-q>", lambda _event: self.close())
+        self.root.bind("<Control-Q>", lambda _event: self.close())
+        self.root.bind("<Escape>", self.clear_search)
 
     def _shortcut_classify(self, event: tk.Event, category_index: int) -> None:
         if event.widget.winfo_class() in {"Entry", "TEntry", "TCombobox"}:
@@ -580,11 +664,17 @@ class ImageClassifierApp:
             return
         self.skip_image()
 
+    def _shortcut_undo(self, event: tk.Event) -> None:
+        if event.widget.winfo_class() in {"Entry", "TEntry", "TCombobox"}:
+            return
+        self.undo()
+
     def save_settings(self) -> None:
         self.settings = {
             "data_root": str(self.data_root),
             "source": str(self.source),
             "targets": {category.key: str(category.path) for category in self.categories},
+            "category_titles": {category.key: category.title for category in self.categories},
             "mode": self.mode_var.get(),
         }
         atomic_write_json(self.settings_path, self.settings)
@@ -624,6 +714,62 @@ class ImageClassifierApp:
             button = getattr(category, "folder_button", None)
             if button is not None:
                 button.configure(text=f"{category.title}  ·  {category.path.name}")
+            title_label = getattr(category, "title_label", None)
+            if title_label is not None:
+                title_label.configure(text=category.title)
+            menu_index = getattr(category, "menu_index", None)
+            if menu_index is not None:
+                self.category_menu.entryconfigure(menu_index, label=f"分类为“{category.title}”")
+
+    def open_category_name_settings(self) -> None:
+        dialog = tk.Toplevel(self.root)
+        dialog.title("编辑分类名称")
+        dialog.geometry("500x340")
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.grab_set()
+        frame = ttk.Frame(dialog, padding=18)
+        frame.pack(fill="both", expand=True)
+        ttk.Label(
+            frame,
+            text="修改界面显示名称，不会改变目标文件夹和已有分类记录。",
+            style="Info.TLabel",
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 14))
+
+        variables: dict[str, tk.StringVar] = {}
+        for row, category in enumerate(self.categories, start=1):
+            ttk.Label(frame, text=f"第 {row} 类", width=10).grid(row=row, column=0, sticky="w", pady=7)
+            variable = tk.StringVar(value=category.title)
+            variables[category.key] = variable
+            entry = ttk.Entry(frame, textvariable=variable)
+            entry.grid(row=row, column=1, sticky="ew", pady=7)
+            if row == 1:
+                entry.focus_set()
+                entry.selection_range(0, "end")
+
+        frame.columnconfigure(1, weight=1)
+
+        def apply_names() -> None:
+            names = [variables[category.key].get().strip() for category in self.categories]
+            if any(not name for name in names):
+                messagebox.showerror("名称无效", "四个分类名称都不能为空。", parent=dialog)
+                return
+            if len({name.casefold() for name in names}) != len(names):
+                messagebox.showerror("名称重复", "四个分类名称不能重复。", parent=dialog)
+                return
+            for category, name in zip(self.categories, names):
+                category.title = name
+            self.update_folder_buttons()
+            self.save_settings()
+            dialog.destroy()
+            self.status_var.set("分类名称已更新")
+
+        buttons = ttk.Frame(frame)
+        buttons.grid(row=6, column=0, columnspan=2, sticky="e", pady=(18, 0))
+        ttk.Button(buttons, text="取消", command=dialog.destroy).pack(side="left", padx=4)
+        ttk.Button(buttons, text="保存", command=apply_names).pack(side="left", padx=4)
+        dialog.bind("<Return>", lambda _event: apply_names())
+        dialog.bind("<Escape>", lambda _event: dialog.destroy())
 
     def open_target_settings(self) -> None:
         dialog = tk.Toplevel(self.root)
@@ -1210,6 +1356,15 @@ def main() -> int:
         app.search_var.set("")
         if app.visible_image_indices != [0, 1, 2] or app.file_list.size() != 3:
             raise RuntimeError("清空文件名搜索测试失败")
+        original_title = app.categories[0].title
+        app.categories[0].title = "名称测试"
+        app.update_folder_buttons()
+        if app.categories[0].title_label.cget("text") != "名称测试":  # type: ignore[attr-defined]
+            raise RuntimeError("分类名称更新测试失败")
+        if "名称测试" not in app.category_menu.entrycget(0, "label"):
+            raise RuntimeError("分类菜单名称同步测试失败")
+        app.categories[0].title = original_title
+        app.update_folder_buttons()
         print("UI-SMOKE-TEST OK")
         root.destroy()
         return 0
