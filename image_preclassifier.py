@@ -40,6 +40,7 @@ UI_TEXT = "#D8D8D8"
 UI_MUTED = "#9A9A9A"
 UI_ACCENT = "#2495D0"
 UI_CANVAS = "#202020"
+UI_MENUBAR = "#121416"
 UI_FONT = "Microsoft YaHei UI"
 
 
@@ -378,7 +379,7 @@ class ImageClassifierApp:
             thickness=5,
         )
 
-    def _new_menu(self, parent: tk.Menu) -> tk.Menu:
+    def _new_menu(self, parent: tk.Misc) -> tk.Menu:
         return tk.Menu(
             parent,
             tearoff=False,
@@ -393,35 +394,51 @@ class ImageClassifierApp:
         )
 
     def _build_menu(self) -> None:
-        self.menu_bar = tk.Menu(
+        self.menu_bar = tk.Frame(
             self.root,
-            tearoff=False,
-            bg=UI_SURFACE,
-            fg=UI_TEXT,
-            activebackground="#353535",
-            activeforeground="#FFFFFF",
+            bg=UI_MENUBAR,
+            height=31,
             borderwidth=0,
-            relief="flat",
-            font=(UI_FONT, 9),
         )
+        self.menu_bar.pack(fill="x")
 
-        file_menu = self._new_menu(self.menu_bar)
+        def add_menu_button(label: str, menu: tk.Menu) -> None:
+            button = tk.Menubutton(
+                self.menu_bar,
+                text=label,
+                menu=menu,
+                bg=UI_MENUBAR,
+                fg="#E8E8E8",
+                activebackground="#2B2E31",
+                activeforeground="#FFFFFF",
+                borderwidth=0,
+                relief="flat",
+                highlightthickness=0,
+                indicatoron=False,
+                padx=11,
+                pady=5,
+                font=(UI_FONT, 9),
+                cursor="hand2",
+            )
+            button.pack(side="left")
+
+        file_menu = self._new_menu(self.root)
         file_menu.add_command(label="打开图片目录", accelerator="Ctrl+O", command=self.choose_source)
         file_menu.add_command(label="重新扫描", accelerator="F5", command=self.reload_images)
         file_menu.add_command(label="打开当前图片所在目录", command=self.open_current_folder)
         file_menu.add_separator()
         file_menu.add_command(label="退出", accelerator="Ctrl+Q", command=self.close)
-        self.menu_bar.add_cascade(label="文件", menu=file_menu)
+        add_menu_button("文件", file_menu)
 
-        edit_menu = self._new_menu(self.menu_bar)
+        edit_menu = self._new_menu(self.root)
         edit_menu.add_command(label="撤销", accelerator="Ctrl+Z", command=self.undo)
         edit_menu.add_command(label="搜索文件名", accelerator="Ctrl+F", command=self.focus_search)
         edit_menu.add_command(label="清空搜索", accelerator="Esc", command=self.clear_search)
         edit_menu.add_separator()
         edit_menu.add_command(label="删除当前图片", accelerator="Delete", command=self.delete_current_image)
-        self.menu_bar.add_cascade(label="编辑", menu=edit_menu)
+        add_menu_button("编辑", edit_menu)
 
-        self.category_menu = self._new_menu(self.menu_bar)
+        self.category_menu = self._new_menu(self.root)
         for number, category in enumerate(self.categories, start=1):
             self.category_menu.add_command(
                 label=f"分类为“{category.title}”",
@@ -431,9 +448,9 @@ class ImageClassifierApp:
             category.menu_index = number - 1  # type: ignore[attr-defined]
         self.category_menu.add_separator()
         self.category_menu.add_command(label="标记为不分类", accelerator="Space", command=self.skip_image)
-        self.menu_bar.add_cascade(label="分类", menu=self.category_menu)
+        add_menu_button("分类", self.category_menu)
 
-        settings_menu = self._new_menu(self.menu_bar)
+        settings_menu = self._new_menu(self.root)
         settings_menu.add_command(label="设置目标文件夹…", command=self.open_target_settings)
         settings_menu.add_command(label="编辑分类名称…", command=self.open_category_name_settings)
         settings_menu.add_separator()
@@ -441,41 +458,35 @@ class ImageClassifierApp:
         mode_menu.add_radiobutton(label="移动图片", value="move", variable=self.mode_var, command=self.save_settings)
         mode_menu.add_radiobutton(label="复制图片", value="copy", variable=self.mode_var, command=self.save_settings)
         settings_menu.add_cascade(label="处理模式", menu=mode_menu)
-        self.menu_bar.add_cascade(label="设置", menu=settings_menu)
+        add_menu_button("设置", settings_menu)
 
-        self.root.configure(menu=self.menu_bar)
+        tk.Frame(self.root, bg="#2F3336", height=1, borderwidth=0).pack(fill="x")
 
     def _build_ui(self) -> None:
-        # 第一行直接展示四个目标目录，点击任一按钮即可单独更换。
-        top = ttk.Frame(self.root, style="Toolbar.TFrame", padding=(12, 5))
+        # 常用操作和四个目标目录放在同一行，减少顶部占用空间。
+        top = ttk.Frame(self.root, style="Toolbar.TFrame", padding=(10, 5))
         top.pack(fill="x")
-        brand = ttk.Frame(top, style="Toolbar.TFrame")
-        brand.pack(side="left", padx=(0, 15))
-        ttk.Label(brand, text="Labelyou", style="Brand.TLabel").pack(anchor="w")
-        ttk.Label(top, text="目标文件夹", style="SideInfo.TLabel").pack(side="left", padx=(0, 7))
-        for category in self.categories:
+        ttk.Button(top, text="打开目录", style="Toolbar.TButton", command=self.choose_source).grid(row=0, column=0, padx=(0, 4))
+        ttk.Button(top, text="重新扫描", style="Toolbar.TButton", command=self.reload_images).grid(row=0, column=1, padx=4)
+        ttk.Label(top, text="处理模式", style="Side.TLabel").grid(row=0, column=2, padx=(13, 6))
+        mode = ttk.Combobox(top, textvariable=self.mode_var, values=("move", "copy"), state="readonly", width=6)
+        mode.grid(row=0, column=3)
+        mode.bind("<<ComboboxSelected>>", lambda _event: self.save_settings())
+        tk.Frame(top, bg=UI_BORDER, width=1, height=24).grid(row=0, column=4, padx=12, sticky="ns")
+        ttk.Label(top, text="目标文件夹", style="Side.TLabel").grid(row=0, column=5, padx=(0, 6))
+        for column, category in enumerate(self.categories, start=6):
             button = ttk.Button(
                 top,
                 text=f"{category.title}  ·  {category.path.name}",
                 style="Folder.TButton",
                 command=lambda c=category: self.choose_category_folder(c),
             )
-            button.pack(side="left", padx=3)
+            button.grid(row=0, column=column, padx=3)
             category.folder_button = button  # type: ignore[attr-defined]
-        ttk.Button(top, text="全部设置", style="Folder.TButton", command=self.open_target_settings).pack(side="right", padx=3)
-
-        tk.Frame(self.root, bg=UI_BORDER, height=1).pack(fill="x")
-
-        # 第二行只保留操作命令，去掉 move/copy 的重复解释文字。
-        toolbar = ttk.Frame(self.root, style="Folderbar.TFrame", padding=(12, 4))
-        toolbar.pack(fill="x")
-        ttk.Button(toolbar, text="打开图片目录", style="Toolbar.TButton", command=self.choose_source).pack(side="left", padx=3)
-        ttk.Button(toolbar, text="重新扫描", style="Toolbar.TButton", command=self.reload_images).pack(side="left", padx=3)
-        ttk.Label(toolbar, text="处理模式", style="Folderbar.TLabel").pack(side="left", padx=(16, 6))
-        mode = ttk.Combobox(toolbar, textvariable=self.mode_var, values=("move", "copy"), state="readonly", width=7)
-        mode.pack(side="left")
-        mode.bind("<<ComboboxSelected>>", lambda _event: self.save_settings())
-        ttk.Button(toolbar, text="撤销", style="Toolbar.TButton", command=self.undo).pack(side="right", padx=3)
+        spacer_column = 6 + len(self.categories)
+        top.columnconfigure(spacer_column, weight=1)
+        ttk.Button(top, text="撤销", style="Toolbar.TButton", command=self.undo).grid(row=0, column=spacer_column + 1, padx=(8, 4), sticky="e")
+        ttk.Button(top, text="全部设置", style="Folder.TButton", command=self.open_target_settings).grid(row=0, column=spacer_column + 2, padx=(4, 0), sticky="e")
 
         tk.Frame(self.root, bg=UI_BORDER, height=1).pack(fill="x")
 
@@ -1345,6 +1356,13 @@ def main() -> int:
         root.update_idletasks()
         if not app.canvas.winfo_exists() or not app.file_list.winfo_exists():
             raise RuntimeError("界面控件创建失败")
+        menu_labels = [
+            child.cget("text")
+            for child in app.menu_bar.winfo_children()
+            if child.winfo_class() == "Menubutton"
+        ]
+        if menu_labels != ["文件", "编辑", "分类", "设置"]:
+            raise RuntimeError("顶部菜单栏创建失败")
         app.images = [
             app.source / "station_1_crack.jpg",
             app.source / "station_2_residue.jpg",
